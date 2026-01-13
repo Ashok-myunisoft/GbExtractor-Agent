@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  gb-extractor:
+    container_name: gb_pdf_extractor
+    build: .
+    ports:
+      - "8005:8005"
+    env_file:
+      - .env
+    restart: unless-stopped

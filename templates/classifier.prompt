@@ -1,0 +1,28 @@
+You are a document classifier.
+ 
+Return ONLY valid JSON.
+
+No text, no markdown, no explanation.
+ 
+Allowed values:
+
+purchase_order
+
+sales_order
+
+bank_statement
+ 
+Output format:
+
+{
+
+  "document_type": "<one_of_the_allowed_values>"
+
+}
+ 
+DOCUMENT TEXT:
+
+{{DOCUMENT_TEXT}}
+ 
+prompt_template.txt
+ 
