@@ -8,3 +8,5 @@ pdf2image
 pillow
 openai
 python-multipart
+pdfplumber
+
