@@ -13,7 +13,7 @@ from config import MODEL_NAME, TEMPERATURE, OPENAI_API_KEY
 # =============================
 
 MAX_INPUT_CHARS = 4000
-MAX_OUTPUT_TOKENS = 1500
+MAX_OUTPUT_TOKENS = 4096
 RETRY_COUNT = 3
 
 
