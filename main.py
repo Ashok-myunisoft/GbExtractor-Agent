@@ -41,7 +41,7 @@ TEMPLATE_MAP = {
 # Splits by transaction count instead of characters
 # =============================
 
-DATE_PATTERN = r"\d{2}[/-]\d{2}[/-]\d{4}"
+DATE_PATTERN = r"\d{2}[/.-]\d{2}[/.-]\d{4}|\d{2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s\d{4}"
 
 
 def chunk_text_by_transactions(text: str, max_transactions: int = 12):
@@ -54,17 +54,19 @@ def chunk_text_by_transactions(text: str, max_transactions: int = 12):
 
     for line in lines:
 
-        # Detect new transaction start
+        # Detect new transaction start (using updated regex)
         if re.match(DATE_PATTERN, line.strip()):
+            
+            # If we reached the limit, split NOW before adding the new transaction
+            # This ensures the previous chunk ends cleanly with full transactions
+            if transaction_count >= max_transactions:
+                chunks.append(current_chunk)
+                current_chunk = ""
+                transaction_count = 0
+            
             transaction_count += 1
 
         current_chunk += line + "\n"
-
-        # Split safely
-        if transaction_count >= max_transactions:
-            chunks.append(current_chunk)
-            current_chunk = ""
-            transaction_count = 0
 
     if current_chunk.strip():
         chunks.append(current_chunk)
