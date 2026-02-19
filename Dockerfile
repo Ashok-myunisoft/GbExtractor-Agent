@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
 
 # ---------- Working Directory ----------
 WORKDIR /app
-
+COPY templates/ /app/templates/
 # ---------- Install Python Dependencies ----------
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -28,4 +28,4 @@ ENV PORT=8005
 EXPOSE 8005
 
 # ---------- Run Application ----------
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8005"]
+CMD [ "python", "-u", "handler.py" ]
