@@ -9,4 +9,3 @@ pillow
 openai
 python-multipart
 pdfplumber
-runpod

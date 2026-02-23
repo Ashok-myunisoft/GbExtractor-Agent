@@ -28,4 +28,4 @@ ENV PORT=8005
 EXPOSE 8005
 
 # ---------- Run Application ----------
-CMD [ "python", "-u", "handler.py" ]
+CMD [ "python", "-u", "main.py" ]
