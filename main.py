@@ -1,9 +1,13 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
-
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List
 
-from services.pdf_loader import extract_text_from_pdf_bytes
+from services.pdf_loader import (
+    extract_text_from_pdf_bytes,
+    extract_text_from_image_bytes,
+    extract_text_from_xml_bytes,
+)
 from services.extractor import extract_using_template
 
 import re
@@ -33,6 +37,11 @@ TEMPLATE_MAP = {
     "purchase_order": "templates/purchase_order.prompt",
     "sales_order": "templates/sales_order.prompt",
     "bank_statement": "templates/bank_statement.prompt",
+    "payslip": "templates/payslip.prompt",
+    "activity_register": "templates/activity_register.prompt",
+    "visiting_card": "templates/visiting_card.prompt",
+    "invoice": "templates/universal.prompt",
+    "receipt": "templates/universal.prompt",
 }
 
 
@@ -56,14 +65,14 @@ def chunk_text_by_transactions(text: str, max_transactions: int = 12):
 
         # Detect new transaction start (using updated regex)
         if re.match(DATE_PATTERN, line.strip()):
-            
+
             # If we reached the limit, split NOW before adding the new transaction
             # This ensures the previous chunk ends cleanly with full transactions
             if transaction_count >= max_transactions:
                 chunks.append(current_chunk)
                 current_chunk = ""
                 transaction_count = 0
-            
+
             transaction_count += 1
 
         current_chunk += line + "\n"
@@ -75,78 +84,78 @@ def chunk_text_by_transactions(text: str, max_transactions: int = 12):
 
 
 # =============================
-# MAIN API
+# FILE TYPE DETECTION
 # =============================
 
-@app.post("/gbaiapi/ice_upload")
-async def upload_pdf(file: UploadFile = File(...)):
+def detect_file_type(filename: str, content_type: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext == "pdf":
+        return "pdf"
+    if ext == "xml":
+        return "xml"
+    if ext in ("jpg", "jpeg", "png"):
+        return "image"
+    # Fallback to content-type header
+    if "pdf" in content_type:
+        return "pdf"
+    if "xml" in content_type:
+        return "xml"
+    if "image" in content_type:
+        return "image"
+    return "unsupported"
+
+
+# =============================
+# SINGLE FILE PROCESSOR
+# =============================
+
+async def process_single_file(file: UploadFile) -> dict:
+
+    file_name = file.filename or "unknown"
 
     try:
 
-        pdf_bytes = await file.read()
+        file_bytes = await file.read()
 
-        if not pdf_bytes:
+        if not file_bytes:
+            return {"file_name": file_name, "error": "Empty file"}
 
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Empty file"}
-            )
+        # ---------- Detect and extract text ----------
+        file_type = detect_file_type(file_name, file.content_type or "")
 
-
-        document_text = extract_text_from_pdf_bytes(pdf_bytes)
+        if file_type == "pdf":
+            document_text = extract_text_from_pdf_bytes(file_bytes)
+        elif file_type == "xml":
+            document_text = extract_text_from_xml_bytes(file_bytes)
+        elif file_type == "image":
+            document_text = extract_text_from_image_bytes(file_bytes)
+        else:
+            return {"file_name": file_name, "error": f"Unsupported file type: {file_name.rsplit('.', 1)[-1] if '.' in file_name else 'unknown'}"}
 
         if not document_text or len(document_text.strip()) < 50:
+            return {"file_name": file_name, "error": "Unable to extract text from file"}
 
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Unable to extract text from PDF"}
-            )
-
-
-        # =============================
-        # CLASSIFIER
-        # =============================
-
+        # ---------- Classify ----------
         with open("templates/classifier.prompt", "r", encoding="utf-8") as f:
             classifier_prompt = f.read()
 
-
         classification = extract_using_template(
-            document_text=document_text[:2000],
+            document_text=document_text[:5000],
             prompt_template=classifier_prompt,
             doc_type="classifier",
         )
 
-
         doc_type = classification.get("document_type")
 
-
-        if doc_type not in TEMPLATE_MAP:
-
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "Unknown document type",
-                    "detected": doc_type,
-                },
-            )
-
-
         # =============================
-        # LOAD EXTRACTION PROMPT
-        # =============================
-
-        with open(TEMPLATE_MAP[doc_type], "r", encoding="utf-8") as f:
-            extraction_prompt = f.read()
-
-
-        # =============================
-        # BANK STATEMENT (FIXED)
+        # BANK STATEMENT (UNCHANGED)
         # =============================
 
         if doc_type == "bank_statement":
 
-            # FIX: use transaction-based chunking
+            with open(TEMPLATE_MAP["bank_statement"], "r", encoding="utf-8") as f:
+                extraction_prompt = f.read()
+
             chunks = chunk_text_by_transactions(
                 document_text,
                 max_transactions=12
@@ -176,7 +185,6 @@ async def upload_pdf(file: UploadFile = File(...)):
                     doc_type="bank_statement",
                 )
 
-
                 # Merge header safely
                 for key in bank_header:
 
@@ -195,44 +203,83 @@ async def upload_pdf(file: UploadFile = File(...)):
                         if bank_header[key] is None and result.get(key) is not None:
                             bank_header[key] = result[key]
 
-
                 all_transactions.extend(
                     result.get("transactions", [])
                 )
 
-
             return {
+                "file_name": file_name,
                 "document_type": "bank_statement",
-                "data": {
+                "extracted_data": {
                     **bank_header,
                     "transactions": all_transactions,
                 },
             }
 
+        # =============================
+        # KNOWN TYPES (PO / SO / PAYSLIP / ACTIVITY / VISITING CARD / INVOICE / RECEIPT)
+        # =============================
+
+        if doc_type in TEMPLATE_MAP:
+
+            with open(TEMPLATE_MAP[doc_type], "r", encoding="utf-8") as f:
+                extraction_prompt = f.read()
+
+            extracted_json = extract_using_template(
+                document_text=document_text,
+                prompt_template=extraction_prompt,
+                doc_type=doc_type,
+            )
+
+            return {
+                "file_name": file_name,
+                "document_type": doc_type,
+                "extracted_data": extracted_json,
+            }
 
         # =============================
-        # PO / SO (UNCHANGED)
+        # UNKNOWN / UNIVERSAL FALLBACK
         # =============================
+
+        with open("templates/universal.prompt", "r", encoding="utf-8") as f:
+            universal_prompt = f.read()
 
         extracted_json = extract_using_template(
             document_text=document_text,
-            prompt_template=extraction_prompt,
-            doc_type=doc_type,
+            prompt_template=universal_prompt,
+            doc_type="unknown",
         )
 
+        inferred_type = extracted_json.pop("document_type", None) or "unknown"
 
         return {
-            "document_type": doc_type,
-            "data": extracted_json,
+            "file_name": file_name,
+            "document_type": inferred_type,
+            "extracted_data": extracted_json,
         }
-
 
     except Exception as e:
 
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )
+        return {
+            "file_name": file_name,
+            "error": str(e),
+        }
+
+
+# =============================
+# MAIN API
+# =============================
+
+@app.post("/gbaiapi/ice_upload")
+async def upload_pdf(files: List[UploadFile] = File(...)):
+
+    results = []
+
+    for file in files:
+        result = await process_single_file(file)
+        results.append(result)
+
+    return {"files": results}
 
 
 # =============================
