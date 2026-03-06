@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import List, Annotated
 
 from services.pdf_loader import (
     extract_text_from_pdf_bytes,
@@ -271,7 +271,7 @@ async def process_single_file(file: UploadFile) -> dict:
 # =============================
 
 @app.post("/gbaiapi/ice_upload")
-async def upload_pdf(files: List[UploadFile] = File(...)):
+async def upload_pdf(files: Annotated[List[UploadFile], File()]):
 
     results = []
 
