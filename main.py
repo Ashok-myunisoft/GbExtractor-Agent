@@ -270,7 +270,28 @@ async def process_single_file(file: UploadFile) -> dict:
 # MAIN API
 # =============================
 
-@app.post("/gbaiapi/ice_upload")
+@app.post(
+    "/gbaiapi/ice_upload",
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "files": {
+                                "type": "array",
+                                "items": {"type": "string", "format": "binary"},
+                            }
+                        },
+                        "required": ["files"],
+                    }
+                }
+            },
+            "required": True,
+        }
+    },
+)
 async def upload_pdf(files: Annotated[List[UploadFile], File()]):
 
     results = []
